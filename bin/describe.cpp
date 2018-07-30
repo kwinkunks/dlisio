@@ -144,6 +144,34 @@ int logical_segment_header( const char* buffer, int record, int segment ) {
     return seglen;
 }
 
+int record_component( int role,
+                      int type,
+                      int name,
+                      int record,
+                      int segment ) {
+    std::printf( "component-role %d.%d: ", record, segment );
+    switch( role ) {
+        case DLIS_ROLE_ABSATR: std::puts( "ABSATR" ); break;
+        case DLIS_ROLE_ATTRIB: std::puts( "ATTRIB" ); break;
+        case DLIS_ROLE_INVATR: std::puts( "INVATR" ); break;
+        case DLIS_ROLE_OBJECT: std::puts( "OBJECT" ); break;
+        case DLIS_ROLE_RESERV: std::puts( "RESERV" ); break;
+        case DLIS_ROLE_RDSET:  std::puts( "RDSET" );  break;
+        case DLIS_ROLE_RSET:   std::puts( "RSET" );   break;
+        case DLIS_ROLE_SET:    std::puts( "SET" );    break;
+        default:
+            std::fputs( "no matching component role", stderr );
+            std::exit( 1 );
+    }
+
+    std::printf( "component-type %d.%d: %s\n",
+                record, segment, type ? "yes" : "no" );
+    std::printf( "component-name %d.%d: %s\n",
+                record, segment, name ? "yes" : "no" );
+
+    return 0;
+}
+
 void describe( const char* fname ) {
     std::unique_ptr< std::FILE, fcloser > ufp(
         std::fopen( fname, "rb" )
