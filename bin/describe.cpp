@@ -81,11 +81,11 @@ int visible_record_label( const char* buffer, int record ) {
     int err = dlis_vrl( buffer, &recordlen, &version );
 
     if( err ) {
-        std::fprintf( stderr, "unable to parse VRL %d\n", record );
+        std::fprintf( stderr, "%d unable to parse VRL\n", record );
         std::exit( 1 );
     }
 
-    std::printf( "record-len %d: %d\n", record, recordlen );
+    std::printf( "%d record-len: %d\n", record, recordlen );
     return recordlen;
 }
 
@@ -96,13 +96,13 @@ int logical_segment_header( const char* buffer, int record, int segment ) {
     auto err = dlis_lrsh( buffer, &seglen, &attrs, &type );
 
     if( err ) {
-        std::fprintf( stderr, "unable to parse LRSH %d.%d\n",
+        std::fprintf( stderr, "%d.%d unable to parse LRSH\n",
                               record, segment );
         std::exit( 1 );
     }
 
-    std::printf( "segment-len %d.%d: %d\n"
-                 "segment-type %d.%d: %d\n",
+    std::printf( "%d.%d segment-len: %d\n"
+                 "%d.%d segment-type: %d\n",
                  record, segment, seglen,
                  record, segment, type );
 
@@ -138,7 +138,7 @@ int logical_segment_header( const char* buffer, int record, int segment ) {
     /* remove trailing white-space */
     if( !attributes.empty() ) attributes.pop_back();
 
-    std::printf( "segment-attributes %d.%d: %s\n",
+    std::printf( "%d.%d segment-attributes: %s\n",
                  record, segment, attributes.c_str() );
 
     return seglen;
@@ -164,9 +164,9 @@ int record_component( int role,
             std::exit( 1 );
     }
 
-    std::printf( "component-type %d.%d: %s\n",
+    std::printf( "%d.%d component-type: %s\n",
                 record, segment, type ? "yes" : "no" );
-    std::printf( "component-name %d.%d: %s\n",
+    std::printf( "%d.%d component-name: %s\n",
                 record, segment, name ? "yes" : "no" );
 
     return 0;
