@@ -72,7 +72,7 @@ int storage_unit_label( const char* buffer ) {
                 maxlen,
                 id );
 
-    return 80;
+    return maxlen;
 }
 
 int visible_record_label( const char* buffer, int record ) {
@@ -86,7 +86,7 @@ int visible_record_label( const char* buffer, int record ) {
     }
 
     std::printf( "record-len %d: %d\n", record, recordlen );
-    return 4;
+    return recordlen;
 }
 
 int logical_segment_header( const char* buffer, int record, int segment ) {
@@ -141,7 +141,7 @@ int logical_segment_header( const char* buffer, int record, int segment ) {
     std::printf( "segment-attributes %d.%d: %s\n",
                  record, segment, attributes.c_str() );
 
-    return 4;
+    return seglen;
 }
 
 void describe( const char* fname ) {
