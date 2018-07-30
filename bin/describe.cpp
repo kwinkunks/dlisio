@@ -14,9 +14,15 @@ struct fcloser {
     void operator()( std::FILE* fp ) { if( fp ) std::fclose( fp ); }
 };
 
-void readf( std::vector< char >& buf, std::size_t nmemb, std::FILE* fp ) {
-    auto readc = std::fread( buf.data(), 1, nmemb, fp );
-    buf.resize( nmemb );
+void readf( std::vector< char >& buf,
+            std::size_t nmemb,
+            std::FILE* fp,
+            int preserve = 0 ) {
+
+    std::size_t offset = preserve ? buf.size() : 0U;
+    buf.resize( nmemb + offset );
+
+    auto readc = std::fread( buf.data() + offset, 1, nmemb, fp );
     if( readc == nmemb ) return;
 
     if( std::feof( fp ) ) {
