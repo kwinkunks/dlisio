@@ -6,7 +6,7 @@ include(CTest)
 include(GNUInstallDirs)
 include(TestBigEndian)
 
-option(BUILD_PYHTON "Build Python extension" ON)
+option(BUILD_PYTHON "Build Python extension" ON)
 
 if (NOT MSVC)
     # assuming gcc-style options
