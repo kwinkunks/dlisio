@@ -46,6 +46,23 @@ add_custom_target(
 
 add_dependencies(dlisio-python dlisio)
 
+install(CODE "
+if (DEFINED ENV{DESTDIR})
+    get_filename_component(abs-destdir \"\$ENV{DESTDIR}\" ABSOLUTE)
+    set(root_destdir --root=\${abs-destdir})
+endif()
+
+execute_process(COMMAND
+    ${python} ${setup.py}
+        install --prefix=${CMAKE_INSTALL_PREFIX}
+                --single-version-externally-managed
+                --record installed-files
+                \${root_destdir}
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+)")
+
+
+
 if(NOT BUILD_TESTING)
     return()
 endif()
