@@ -180,11 +180,9 @@ marker mark( std::FILE* fp, int remaining ) {
     while( true ) {
 
         /*
-         * if remaining = 0 (this is at the VRL, skip the inner-loop and read
-         * it
+         * if remaining = 0 this is at the VRL, skip the inner-loop and read it
          */
         while( remaining > 0 ) {
-
             auto seg = segment_header( fp );
             remaining -= seg.len;
 
@@ -211,7 +209,7 @@ marker mark( std::FILE* fp, int remaining ) {
             if( !has_successor ) return { mark, remaining };
         }
 
-        /* if prev.residual is 0, then we're at a VRL */
+        /* if remaining is 0, then we're at a VRL */
         remaining = visible_length( fp ) - 4;
     }
 }
