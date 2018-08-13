@@ -1,3 +1,4 @@
+#include <bitset>
 #include <cerrno>
 #include <cstdio>
 #include <exception>
@@ -6,9 +7,12 @@
 #include <vector>
 
 #include <pybind11/pybind11.h>
+#include <pybind11/stl.h>
 
 #include <dlisio/dlisio.h>
 #include <dlisio/types.h>
+
+#include "typeconv.cpp"
 
 namespace py = pybind11;
 using namespace py::literals;
@@ -104,7 +108,7 @@ public:
     py::dict storage_unit_label();
     py::tuple markrecord( int );
     py::bytes getrecord( const bookmark& );
-
+    py::dict eflr( const bookmark& );
 
 private:
     struct fcloser {
@@ -229,7 +233,11 @@ std::vector< char > catrecord( std::FILE* fp, int remaining ) {
         while( remaining > 0 ) {
 
             auto seg = segment_header( fp );
+
             remaining -= seg.len;
+
+            if( remaining < 0 )
+                throw py::value_error( "underflow in cat-record" );
 
             int explicit_formatting = 0;
             int has_predecessor = 0;
@@ -278,9 +286,277 @@ py::bytes file::getrecord( const bookmark& m ) {
     return py::bytes( cat.data(), cat.size() );
 }
 
+py::list array( int count, int reprc, const char*& xs ) {
+    py::list l;
+
+    for( int i = 0; i < count; ++i ) {
+        switch( reprc ) {
+            case DLIS_FSHORT: l.append( fshort( xs ) ); break;
+            case DLIS_FSINGL: l.append( fsingl( xs ) ); break;
+            case DLIS_FSING1: l.append( fsing1( xs ) ); break;
+            case DLIS_FSING2: l.append( fsing2( xs ) ); break;
+            case DLIS_ISINGL: l.append( isingl( xs ) ); break;
+            case DLIS_VSINGL: l.append( vsingl( xs ) ); break;
+            case DLIS_FDOUBL: l.append( fdoubl( xs ) ); break;
+            case DLIS_FDOUB1: l.append( fdoub1( xs ) ); break;
+            case DLIS_FDOUB2: l.append( fdoub2( xs ) ); break;
+            case DLIS_CSINGL: l.append( csingl( xs ) ); break;
+            case DLIS_CDOUBL: l.append( cdoubl( xs ) ); break;
+            case DLIS_SSHORT: l.append( sshort( xs ) ); break;
+            case DLIS_SNORM:  l.append(  snorm( xs ) ); break;
+            case DLIS_SLONG:  l.append(  slong( xs ) ); break;
+            case DLIS_USHORT: l.append( ushort( xs ) ); break;
+            case DLIS_UNORM:  l.append(  unorm( xs ) ); break;
+            case DLIS_ULONG:  l.append(  ulong( xs ) ); break;
+            case DLIS_UVARI:  l.append(  uvari( xs ) ); break;
+            case DLIS_IDENT:  l.append(  ident( xs ) ); break;
+            case DLIS_ASCII:  l.append(  ascii( xs ) ); break;
+            case DLIS_DTIME:  l.append(  dtime( xs ) ); break;
+            case DLIS_STATUS: l.append( status( xs ) ); break;
+            case DLIS_OBNAME: l.append( obname( xs ) ); break;
+
+            default:
+                throw py::value_error( "unknown representation code "
+                                     + std::to_string( reprc ) );
+        }
+    }
+
+    return l;
+}
+
+struct set_flags {
+    int type, name;
+};
+
+set_flags set_attributes( std::uint8_t attr ) {
+    int role;
+    auto err = dlis_component( attr, &role );
+    if( err ) {
+        throw py::value_error( "unable to parse eflr component "
+                             + std::bitset< 8 >( attr ).to_string()
+        );
+    }
+
+    switch( role ) {
+        case DLIS_ROLE_RDSET:
+        case DLIS_ROLE_RSET:
+        case DLIS_ROLE_SET:
+            break;
+
+        default:
+            throw py::value_error( std::string( "expected set, was " )
+                                 + dlis_component_str( role )
+                                 + " "
+                                 + std::bitset< 8 >( role ).to_string()
+            );
+    }
+
+    set_flags flags = {};
+    err = dlis_component_set( attr, role, &flags.type, &flags.name );
+
+    if( err )
+        throw py::value_error( "unable to parse fields in eflr component" );
+
+    return flags;
+}
+
+struct tmpl {
+    std::vector< py::dict > attribute;
+    std::vector< py::dict > invariant;
+};
+
+tmpl eflr_template( const char*& cur ) {
+    tmpl cols;
+    while( true ) {
+        std::uint8_t attr;
+        std::memcpy( &attr, cur, sizeof( std::uint8_t ) );
+
+        int role;
+        auto err = dlis_component( attr, &role );
+        if( err )
+            throw py::value_error( "template: unable to parse eflr component "
+                                 + std::bitset< 8 >( attr ).to_string()
+        );
+
+        switch( role ) {
+            case DLIS_ROLE_OBJECT:
+                return cols;
+
+            case DLIS_ROLE_ATTRIB:
+            case DLIS_ROLE_INVATR:
+                break;
+
+            default:
+                throw py::value_error(
+                    std::string( "expected attribute in template, got " )
+                               + dlis_component_str( role )
+                );
+        }
+
+        cur += sizeof( std::uint8_t );
+
+        /* set the global defaults unconditionally */
+        py::dict col( "count"_a = 1,
+                      "reprc"_a = DLIS_IDENT,
+                      "value"_a = py::none() );
+
+        int label;
+        int count;
+        int reprc;
+        int units;
+        int value;
+        err = dlis_component_attrib( attr, role, &label,
+                                                 &count,
+                                                 &reprc,
+                                                 &units,
+                                                 &value );
+
+        if( err )
+            throw py::value_error( "unable to parse template attribute" );
+
+        if( !label )
+            throw py::value_error( "missing template attribute label" );
+
+                    col["label"] = ident( cur );
+        if( count ) col["count"] = uvari( cur );
+        if( reprc ) col["reprc"] = ushort( cur );
+        if( units ) col["units"] = ident( cur );
+        if( value ) col["value"] = array( col["count"].cast< int >(),
+                                          col["reprc"].cast< int >(),
+                                          cur );
+
+        if( role == DLIS_ROLE_ATTRIB ) cols.attribute.push_back( col );
+        else                           cols.invariant.push_back( col );
+    }
+}
+
+py::dict eflr( const std::vector< char >& cat ) {
+    const auto* cur = cat.data();
+    const auto* end = cat.data() + cat.size();
+
+    std::uint8_t descriptor;
+    std::memcpy( &descriptor, cur, sizeof( std::uint8_t ) );
+    cur += sizeof( std::uint8_t );
+
+    auto set = set_attributes( descriptor );
+    py::dict record( "type"_a = py::none() );
+
+    if( set.type ) record["type"] = ident( cur );
+    if( set.name ) record["name"] = ident( cur );
+
+    auto tmpl = eflr_template( cur );
+
+    py::dict objects;
+    while( true ) {
+        if( cur == end ) break;
+
+        std::memcpy( &descriptor, cur, sizeof( std::uint8_t ) );
+        cur += sizeof( std::uint8_t );
+
+        int role;
+        auto err = dlis_component( descriptor, &role );
+        if( err )
+            throw py::value_error( "unable to parse eflr component "
+                                 + std::bitset< 8 >( descriptor ).to_string()
+        );
+
+        if( role != DLIS_ROLE_OBJECT )
+            throw py::value_error( std::string( "expected object, was " )
+                                 + dlis_component_str( role ) );
+
+        /* just assume obname */
+        auto name = obname( cur );
+
+        /* each object forms a row of all attributes */
+        auto row = tmpl.attribute;
+        for( auto& col : row ) {
+            if( cur == end ) break;
+            std::memcpy( &descriptor, cur, sizeof( std::uint8_t ) );
+
+            int role;
+            auto err = dlis_component( descriptor, &role );
+            if( err ) throw py::value_error( "unknown role "
+                                           + std::to_string( descriptor ) );
+
+            /*
+             * if a new object is encountered, default the remaining columns,
+             * and move on the the next row
+             */
+            if( role == DLIS_ROLE_OBJECT ) break;
+
+            switch( role ) {
+                case DLIS_ROLE_ATTRIB:
+                case DLIS_ROLE_ABSATR:
+                    break;
+
+                default:
+                    throw py::value_error(
+                        std::string( "expected attribute, found " ) +
+                        dlis_component_str( role )
+                    );
+            }
+
+            /*
+             * only advance pointer after we know this isn't object, so that
+             * the next object can assume it's at the object boundary
+             */
+            cur += sizeof( std::uint8_t );
+
+            if( role == DLIS_ROLE_ABSATR ) {
+                col[ "value" ] = py::none();
+                continue;
+            }
+
+            int label;
+            int count;
+            int reprc;
+            int units;
+            int value;
+            err = dlis_component_attrib( descriptor, role, &label,
+                                                           &count,
+                                                           &reprc,
+                                                           &units,
+                                                           &value );
+
+            if( label ) {
+                runtime_warning( "found unexpected label in object attribute, "
+                                 "possibly corrupted file. label" );
+                ident( cur );
+            }
+
+            if( count ) col["count"] = uvari( cur );
+            if( reprc ) col["reprc"] = ushort( cur );
+            if( units ) col["units"] = ident( cur );
+            if( value ) col["value"] = array( col[ "count" ].cast< int >(),
+                                              col[ "reprc" ].cast< int >(),
+                                              cur );
+        }
+
+        /* patch invariant-attributes onto the record */
+        row.insert( row.end(), tmpl.invariant.begin(), tmpl.invariant.end() );
+        objects[py::make_tuple(name)] = row;
+    }
+
+    record["template-attribute"] = tmpl.attribute;
+    record["template-invariant"] = tmpl.invariant;
+    record["objects"] = objects;
+    return record;
+}
+
+py::dict file::eflr( const bookmark& mark ) {
+    std::FILE* fd = *this;
+    auto err = std::fsetpos( fd, &mark.pos );
+    if( err ) throw io_error( errno );
+
+    auto cat = catrecord( fd, mark.residual );
+    return ::eflr( cat );
+}
+
 }
 
 PYBIND11_MODULE(core, m) {
+    PyDateTime_IMPORT;
+
     py::register_exception_translator( []( std::exception_ptr p ) {
         try {
             if( p ) std::rethrow_exception( p );
@@ -301,5 +577,6 @@ PYBIND11_MODULE(core, m) {
         .def( "sul",       &file::storage_unit_label )
         .def( "mark",      &file::markrecord )
         .def( "getrecord", &file::getrecord )
+        .def( "eflr",      &file::eflr )
         ;
 }
